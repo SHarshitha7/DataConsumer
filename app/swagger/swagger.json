@@ -1,0 +1,17 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "version": "0.0.1",
+        "title": "Python Flask Microservices",
+        "description": "This is the sample demonstration of python flask microservices which follows api architecture.",
+        "contact": {
+            "name": "Finvedic",
+            "url": "https://gurukul.finvedic.in"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://127.0.0.1:5000/api/"
+        }
+    ]
+}
