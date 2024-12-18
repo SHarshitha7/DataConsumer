@@ -2,6 +2,7 @@ from confluent_kafka import Consumer, KafkaException, KafkaError
 import redis
 import json
 
+
 # Kafka Configuration
 KAFKA_TOPIC = "equity_market_data"
 KAFKA_BOOTSTRAP_SERVERS = "pkc-w77k7w.centralus.azure.confluent.cloud:9092"

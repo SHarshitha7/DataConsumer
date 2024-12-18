@@ -15,7 +15,6 @@ Install Dependencies:
 
 pip install confluent-kafka redis
 
-
 Run the Producer:
 python data_consumer.py
 
