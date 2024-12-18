@@ -21,3 +21,6 @@ typing-extensions==4.8.0
 urllib3==2.2.3
 Werkzeug==2.0.0
 WTForms==3.0.1
+
+kafka-python==2.0.2
+redis==4.5.4
