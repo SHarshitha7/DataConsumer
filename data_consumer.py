@@ -1,69 +1,78 @@
-from confluent_kafka import Consumer, KafkaException, KafkaError
-import redis
 import json
+import logging
+import redis
+from confluent_kafka import Consumer, KafkaException, KafkaError
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("DataConsumer")
 
-# Kafka Configuration
-KAFKA_TOPIC = "equity_market_data"
-KAFKA_BOOTSTRAP_SERVERS = "pkc-w77k7w.centralus.azure.confluent.cloud:9092"
-KAFKA_USERNAME = "BHGH5GP6T5ERDQLI"
-KAFKA_PASSWORD = "D40AFZISgQBVgbFh617ZBMOSkGw0FU77GFr3HBsHLbqAkXJqvl+b/LSEMfP/wXl1"
+# Redis configuration
+REDIS_HOST = "localhost"  # Localhost connection
+REDIS_PORT = 6379         # Default Redis port
+REDIS_DB = 0              # Use default Redis DB
 
-# Redis Configuration
-REDIS_HOST = "redis.finvedic.in"
-REDIS_PORT = 6379
-REDIS_TTL = 3600  # Set TTL for cache entries in seconds (1 hour)
+# Initialize Redis client
+redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
 
-# Initialize Redis client with connection pooling
-redis_client = redis.StrictRedis(
-    host=REDIS_HOST, port=REDIS_PORT, decode_responses=True
-)
+# Kafka configuration
+KAFKA_TOPIC = "stock_orders"
+KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"  # Localhost Kafka Broker
+KAFKA_GROUP_ID = "data_consumer_group"
 
-# Kafka Consumer configuration
 consumer_config = {
     'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
-    'security.protocol': 'SASL_SSL',
-    'sasl.mechanisms': 'PLAIN',
-    'sasl.username': KAFKA_USERNAME,
-    'sasl.password': KAFKA_PASSWORD,
-    'group.id': 'equity_market_group',
-    'auto.offset.reset': 'earliest',  # To read messages from the beginning if no offset is stored
+    'group.id': KAFKA_GROUP_ID,
+    'auto.offset.reset': 'earliest'  # Start consuming from the earliest messages
 }
 
-# Initialize Kafka consumer
-consumer = Consumer(consumer_config)
-
-# Subscribe to the topic
-consumer.subscribe([KAFKA_TOPIC])
+def store_in_redis(data):
+    """
+    Store the consumed data into Redis.
+    Args:
+        data (dict): Market data received from Kafka Consumer.
+    """
+    try:
+        # Use ticker as the key and store the data as JSON
+        ticker = data['ticker']
+        redis_client.set(ticker, json.dumps(data))
+        logger.info(f"Data for {ticker} stored in Redis successfully.")
+    except Exception as e:
+        logger.error(f"Failed to store data in Redis: {e}")
 
 def consume_data():
-    print("Consuming data from Kafka and storing in Redis...")
+    """
+    Consumes data from the Kafka topic and stores it in Redis.
+    """
+    consumer = Consumer(consumer_config)
     try:
+        consumer.subscribe([KAFKA_TOPIC])
+        logger.info(f"Subscribed to Kafka topic: {KAFKA_TOPIC}")
+        
         while True:
-            msg = consumer.poll(timeout=1.0)  # Timeout of 1 second to check for new messages
+            msg = consumer.poll(1.0)  # Poll messages with a 1-second timeout
+            
             if msg is None:
-                continue  # No message received, continue polling
-            if msg.error():
-                if msg.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                    print("Error: Topic not found or unavailable")
-                else:
-                    print(f"Consumer error: {msg.error()}")
                 continue
-            data = msg.value()
-            ticker = data.get("ticker")
-            if ticker:
-                # Store the data in Redis with TTL
-                redis_client.setex(ticker, REDIS_TTL, json.dumps(data))
-                print(f"Stored in Redis: {ticker} -> {data}")
-            else:
-                print("Invalid data received:", data)
-    except KafkaException as e:
-        print(f"KafkaException error: {str(e)}")
-    except Exception as e:
-        print(f"Error while consuming data: {str(e)}")
+            if msg.error():
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    logger.warning("Reached end of partition")
+                elif msg.error():
+                    raise KafkaException(msg.error())
+                continue
+
+            # Decode the message and parse JSON
+            data = json.loads(msg.value().decode('utf-8'))
+            logger.info(f"Received message: {data}")
+            
+            # Store the data in Redis
+            store_in_redis(data)
+
+    except KeyboardInterrupt:
+        logger.info("Consumer interrupted by user.")
     finally:
         consumer.close()
-        print("Kafka consumer connection closed.")
+        logger.info("Consumer closed.")
 
 if __name__ == "__main__":
     consume_data()
